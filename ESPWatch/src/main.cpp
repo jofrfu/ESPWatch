@@ -3,21 +3,32 @@
 //
 
 #include <Arduino.h>
+#include <freertos/timers.h>
 #include "Screen.h"
 #include "ScreenQueue.h"
 #include "Decoder.h"
 #include "Dispatcher.h"
 #include "BLEHandler.h"
-#include <freertos/timers.h>
+
+ScreenQueue *screenQueue;
 
 void setup() {
     Serial.begin(115200);
     delay(5000);
 
     auto screen = new Screen();
-    auto screenQueue = new ScreenQueue(screen);
+    screenQueue = new ScreenQueue(screen);
     auto decoder = new Decoder();
-    auto dispatcher = new Dispatcher(decoder, screenQueue);
+
+    auto callback = [](TimerHandle_t xTimer){
+        ScreenQueue::parameter_t parameter;
+        parameter.type = ScreenQueue::UPDATE;
+        screenQueue->addFunctionCall(parameter);
+    };
+
+    TimerHandle_t timer = xTimerCreate("MinuteTimer", pdMS_TO_TICKS(60000), pdTRUE, (void*)0, callback);
+
+    auto dispatcher = new Dispatcher(decoder, screenQueue, timer);
     auto bleHandler = new BLEHandler(dispatcher);
 
     pthread_t screenThread;
@@ -26,18 +37,12 @@ void setup() {
         Serial.println("Error creating thread screenThread.");
     }
 
-    TimerCallbackFunction_t callback = [screenQueue](TimerHandle_t xTimer){
-        ScreenQueue::parameter_t parameter;
-        parameter.type = ScreenQueue::UPDATE;
-        screenQueue->addFunctionCall(parameter);
-    };
-
-    TimerHandle_t timer = xTimerCreate("ClockTimer", pdMS_TO_TICKS(60000), pdTRUE, (void*)0, callback);
-    if(xTimerStart(timer, 10) != pdPASS) {
-        Serial.println("Error starting timer.");
+    if(xTimerStart(timer, 0) != pdPASS) {
+        Serial.println("Error starting MinuteTimer.");
     }
 
     pthread_join(screenThread, nullptr);
+    while(true); // won't reach this statement - just in case something goes wrong
 }
 
 void loop() {}

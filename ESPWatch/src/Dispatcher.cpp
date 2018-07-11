@@ -7,9 +7,11 @@
 #include "Decoder.h"
 #include <sys/time.h>
 
-Dispatcher::Dispatcher(Decoder *decoder, ScreenQueue *queue)
+Dispatcher::Dispatcher(Decoder *decoder, ScreenQueue *queue, TimerHandle_t minuteTimer)
     : pDecoder(decoder)
-    , pQueue(queue) {}
+    , pQueue(queue) {
+    pMinuteTimer = minuteTimer;
+}
 
 void Dispatcher::onWrite(BLECharacteristic *pCharacteristic) {
     String message(pCharacteristic->getValue().c_str());
@@ -31,6 +33,7 @@ void Dispatcher::decode() {
 
     struct timeval tv{};
     ScreenQueue::parameter_t param;
+    TimerHandle_t resetTimer;
     switch(decoded.type) {
         case Decoder::NONE:
             Serial.println("Unknown message from BLEHandler.");
@@ -46,6 +49,11 @@ void Dispatcher::decode() {
             Serial.printf("New time is %ld\n", tv.tv_sec);
             settimeofday(&tv, nullptr);
             param.type = ScreenQueue::UPDATE;
+
+            resetTimer = xTimerCreate("ResetTimer", pdMS_TO_TICKS(60-(decoded.time%60)), pdFALSE, (void*)1, resetCallback);
+            if(xTimerStart(resetTimer, 0) != pdPASS) {
+                Serial.println("Failed to start ResetTimer.");
+            }
             break;
         case Decoder::REMOVE:
             Serial.printf("New remove id is %d\n", decoded.removeId);
@@ -54,4 +62,15 @@ void Dispatcher::decode() {
             break;
     }
     pQueue->addFunctionCall(param);
+}
+
+TimerHandle_t Dispatcher::pMinuteTimer = nullptr;
+
+void Dispatcher::resetCallback(TimerHandle_t xTimer) {
+    if(xTimerReset(pMinuteTimer, 0) != pdPASS) {
+        Serial.println("Failed to reset MinuteTimer.");
+    }
+    if(xTimerDelete(xTimer, 0) != pdPASS) {
+        Serial.println("Failed to delete ResetTimer");
+    }
 }

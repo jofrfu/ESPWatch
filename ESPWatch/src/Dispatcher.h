@@ -7,19 +7,22 @@
 
 #include <BLECharacteristic.h>
 #include <WString.h>
+#include <freertos/timers.h>
 
 class Decoder;
 class ScreenQueue;
 
 class Dispatcher : public BLECharacteristicCallbacks {
 public:
-    Dispatcher(Decoder *decoder, ScreenQueue *queue);
+    Dispatcher(Decoder *decoder, ScreenQueue *queue, TimerHandle_t minuteTimer);
     void onWrite(BLECharacteristic *pCharacteristic) override;
 private:
     Decoder *pDecoder;
     ScreenQueue *pQueue;
     String packet;
     void decode();
+    static TimerHandle_t pMinuteTimer;
+    static void resetCallback(TimerHandle_t xTimer);
 };
 
 
