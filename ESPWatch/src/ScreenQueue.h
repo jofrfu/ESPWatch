@@ -6,7 +6,7 @@
 #define ESPWATCH_SCREENQUEUE_H
 
 #include <Arduino.h>
-#include <queue>
+#include <list>
 #include "Screen.h"
 
 class ScreenQueue {
@@ -19,10 +19,10 @@ public:
     };
     ScreenQueue(Screen *screen);
     void addFunctionCall(parameter_t &parameter);
-    void* threadFunction(void*);
+    static void* threadFunction(void* param);
 private:
     Screen *pScreen;
-    std::queue<parameter_t> functionQueue;
+    std::list<parameter_t> functionQueue;
     pthread_mutex_t mutex;
     pthread_cond_t condition;
 };

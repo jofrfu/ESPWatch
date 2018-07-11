@@ -3,55 +3,45 @@
 //
 
 #include <Arduino.h>
-#include <Screen.h>
-#include <sys/time.h>
+#include "Screen.h"
+#include "ScreenQueue.h"
 #include "Decoder.h"
 #include "Dispatcher.h"
 #include "BLEHandler.h"
+#include <freertos/timers.h>
 
-void timerInterrupt();
-void* threadFunction(void*);
+void timerCallback(TimerHandle_t xTimer);
 
-volatile boolean doUpdate;
-portMUX_TYPE timerMUX = portMUX_INITIALIZER_UNLOCKED;
-
-pthread_mutex_t mutex;
-pthread_cond_t condition;
+ScreenQueue *screenQueue;
 
 void setup() {
     Serial.begin(115200);
+    delay(5000);
 
-    auto timer = timerBegin(0, 80, true);
-    timerAttachInterrupt(timer, timerInterrupt, true);
-    timerAlarmWrite(timer, 60000000, true);
-    timerAlarmEnable(timer);
+    auto screen = new Screen();
+    screenQueue = new ScreenQueue(screen);
+    auto decoder = new Decoder();
+    auto dispatcher = new Dispatcher(decoder, screenQueue);
+    auto bleHandler = new BLEHandler(dispatcher);
 
+    pthread_t screenThread;
 
-}
-
-void* threadFunction(void*) {
-    pthread_mutex_init(&mutex, nullptr);
-    pthread_cond_init(&condition, nullptr);
-    doUpdate = false;
-
-    while(true) {
-        pthread_mutex_lock(&mutex);
-        while(!doUpdate) {
-            pthread_cond_wait(&condition, &mutex);
-        }
-
-        // TODO: add update
-        portENTER_CRITICAL(&timerMUX);
-        doUpdate = false;
-        portEXIT_CRITICAL(&timerMUX);
+    if(pthread_create(&screenThread, nullptr, screenQueue->threadFunction, screenQueue)) {
+        Serial.println("Error creating thread screenThread.");
     }
+
+    TimerHandle_t timer = xTimerCreate("ClockTimer", pdMS_TO_TICKS(60000), pdTRUE, (void*)0, timerCallback);
+    if(xTimerStart(timer, 10) != pdPASS) {
+        Serial.println("Error starting timer.");
+    }
+
+    pthread_join(screenThread, nullptr);
 }
 
-void IRAM_ATTR timerInterrupt() {
-    portENTER_CRITICAL(&timerMUX);
-    doUpdate = true;
-    portEXIT_CRITICAL(&timerMUX);
-    pthread_cond_signal(&condition);
+void timerCallback(TimerHandle_t xTimer) {
+    ScreenQueue::parameter_t parameter;
+    parameter.type = ScreenQueue::UPDATE;
+    screenQueue->addFunctionCall(parameter);
 }
 
 void loop() {}
